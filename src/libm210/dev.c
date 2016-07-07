@@ -602,3 +602,33 @@ out:
 	free(lost_nums);
 	return err;
 }
+
+
+enum m210_err m210_dev_set_mode(struct m210_dev *const dev_ptr, uint8_t mode)
+{
+	enum m210_err err = M210_ERR_OK;
+	uint8_t bytes[] = {0x80, 0xB5, 0, 0};
+	
+	switch(mode){
+	case M210_DEV_MODE_TABLET:
+		bytes[2] = M210_DEV_LED_MOUSE;
+		bytes[3] = M210_DEV_MODE_TABLET;
+		break;
+	case M210_DEV_MODE_XY:
+		bytes[2] = M210_DEV_LED_PEN;
+		bytes[3] = M210_DEV_MODE_XY;
+		break;
+	default:
+		err = M210_ERR_SYS;
+		goto out;
+		break;
+	}
+
+	err = m210_dev_write(dev_ptr, bytes, sizeof(bytes));
+	if (err) {
+		goto out;
+	}
+	
+out:
+	return err;
+}

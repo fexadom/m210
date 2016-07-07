@@ -59,6 +59,8 @@ static void print_help(void)
 	       "  or:  %s dump [--output-file=FILE]\n"
 	       "  or:  %s convert [--input-file=FILE] [--output-dir=DIR] [--overwrite]\n"
 	       "  or:  %s delete\n"
+		   "  or:  %s xy\n"
+		   "  or:  %s tablet\n"
 	       "\n"
 	       "Download notes from Pegasus Tablet Mobile NoteTaker (M210) and\n"
 	       "convert them to SVG files.\n"
@@ -89,12 +91,16 @@ static void print_help(void)
 	       "Display device information:\n"
 	       "  m210 info\n"
 	       "\n"
+		   "Change to tablet mode:\n"
+	       "  m210 tablet\n"
+	       "\n"
 	       "Report bugs to <%s>\n"
 	       "Homepage: <%s>\n"
 	       "\n",
 	       program_invocation_name, program_invocation_name,
 	       program_invocation_name, program_invocation_name,
 	       program_invocation_name, program_invocation_name,
+		   program_invocation_name, program_invocation_name,
 	       PACKAGE_BUGREPORT, PACKAGE_URL);
 }
 
@@ -416,8 +422,8 @@ static int info_cmd(int argc, char **argv)
 	}
 
 	switch (info.mode) {
-	case M210_DEV_MODE_MOUSE:
-		device_mode = "MOUSE";
+	case M210_DEV_MODE_XY:
+		device_mode = "XY";
 		break;
 	case M210_DEV_MODE_TABLET:
 		device_mode = "TABLET";
@@ -432,6 +438,112 @@ static int info_cmd(int argc, char **argv)
 	printf("Pad version:	 %d\n", info.pad_version);
 	printf("Analog version:	 %d\n", info.analog_version);
 	printf("Firmare version: %d\n", info.firmware_version);
+
+	result = 0;
+out:
+	if (dev) {
+		err = m210_dev_disconnect(&dev);
+		if (err) {
+			m210_err_perror(err, "error: failed to disconnect");
+			result = -1;
+		}
+	}
+	return result;
+}
+
+static int xy_cmd(int argc, char **argv)
+{
+	int result = -1;
+	m210_dev dev;
+	enum m210_err err;
+	const struct option opts[] = {
+		{0, 0, 0, 0}
+	};
+
+	while (1) {
+		int option = getopt_long(argc, argv, "+", opts, NULL);
+
+		if (option == -1) {
+			break;
+		}
+
+		switch (option) {
+		default:
+			print_help_hint();
+			goto out;
+		}
+	}
+
+	if (optind != argc) {
+		fprintf(stderr, "error: unexpected mouse arguments\n");
+		print_help_hint();
+		goto out;
+	}
+
+	err = m210_dev_connect(&dev);
+	if (err) {
+		m210_err_perror(err, "failed to open device");
+		goto out;
+	}
+
+	err = m210_dev_set_mode(dev, M210_DEV_MODE_XY);
+	if (err) {
+		m210_err_perror(err, "failed to set mouse mode");
+		goto out;
+	}
+
+	result = 0;
+out:
+	if (dev) {
+		err = m210_dev_disconnect(&dev);
+		if (err) {
+			m210_err_perror(err, "error: failed to disconnect");
+			result = -1;
+		}
+	}
+	return result;
+}
+
+static int tablet_cmd(int argc, char **argv)
+{
+	int result = -1;
+	m210_dev dev;
+	enum m210_err err;
+	const struct option opts[] = {
+		{0, 0, 0, 0}
+	};
+
+	while (1) {
+		int option = getopt_long(argc, argv, "+", opts, NULL);
+
+		if (option == -1) {
+			break;
+		}
+
+		switch (option) {
+		default:
+			print_help_hint();
+			goto out;
+		}
+	}
+
+	if (optind != argc) {
+		fprintf(stderr, "error: unexpected tablet arguments\n");
+		print_help_hint();
+		goto out;
+	}
+
+	err = m210_dev_connect(&dev);
+	if (err) {
+		m210_err_perror(err, "failed to open device");
+		goto out;
+	}
+
+	err = m210_dev_set_mode(dev, M210_DEV_MODE_TABLET);
+	if (err) {
+		m210_err_perror(err, "failed to set tablet mode");
+		goto out;
+	}
 
 	result = 0;
 out:
@@ -498,6 +610,10 @@ int main(int argc, char **argv)
 		cmdfn = &convert_cmd;
 	} else if (strcmp(cmd, "delete") == 0) {
 		cmdfn = &delete_cmd;
+	} else if (strcmp(cmd, "xy") == 0) {
+		cmdfn = &xy_cmd;
+	} else if (strcmp(cmd, "tablet") == 0) {
+		cmdfn = &tablet_cmd;
 	} else {
 		fprintf(stderr, "error: unknown command '%s'\n", cmd);
 		print_help_hint();

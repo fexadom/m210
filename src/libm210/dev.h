@@ -23,8 +23,11 @@
 
 #include "err.h"
 
-#define M210_DEV_MODE_MOUSE  0x01
+#define M210_DEV_MODE_XY  0x01
 #define M210_DEV_MODE_TABLET 0x02
+
+#define M210_DEV_LED_PEN 0x01
+#define M210_DEV_LED_MOUSE 0x02
 
 #define M210_DEV_MAX_MEMORY 4063232 /* Bytes. */
 
@@ -43,5 +46,6 @@ enum m210_err m210_dev_disconnect(m210_dev *devp);
 enum m210_err m210_dev_get_info(m210_dev dev, struct m210_dev_info *infop);
 enum m210_err m210_dev_download_notes(m210_dev dev, FILE *file);
 enum m210_err m210_dev_delete_notes(m210_dev dev);
+enum m210_err m210_dev_set_mode(m210_dev dev, uint8_t mode);
 
 #endif /* DEV_H */
