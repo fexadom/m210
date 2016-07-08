@@ -20,6 +20,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <time.h>
 
 #include <linux/hidraw.h>
 #include <linux/input.h>  /* BUS_USB */
@@ -46,6 +47,14 @@ struct m210_dev_packet {
 	uint16_t num;
 	uint8_t data[M210_DEV_PACKET_SIZE];
 } __attribute__((packed));
+
+typedef struct {
+	uint8_t report_id;
+	uint16_t x;
+	uint16_t y;
+	uint8_t state;
+	uint16_t pressure;
+} __attribute__((packed)) m210_dev_pendata_packet;
 
 static struct hidraw_devinfo const DEVINFO_M210 = {
 	BUS_USB,
@@ -355,6 +364,19 @@ static enum m210_err m210_dev_read_packet(struct m210_dev const *const dev_ptr,
 	return err;
 }
 
+static enum m210_err m210_dev_read_pendata_packet(struct m210_dev const *const dev_ptr,
+					m210_dev_pendata_packet *const packet_ptr)
+{
+	enum m210_err err = m210_dev_read(dev_ptr, 1, packet_ptr,
+					  sizeof(m210_dev_pendata_packet));
+	if (!err) {
+		packet_ptr->x = le16toh(packet_ptr->x);
+		packet_ptr->y = le16toh(packet_ptr->y);
+		packet_ptr->pressure = le16toh(packet_ptr->pressure);
+	}
+	return err;
+}
+
 enum m210_err m210_dev_connect(struct m210_dev **const dev_ptr_ptr)
 {
 	struct m210_dev *dev_ptr = NULL;
@@ -603,26 +625,51 @@ out:
 	return err;
 }
 
+enum m210_err m210_dev_stream_notes(struct m210_dev *const dev_ptr, FILE *file)
+{
+	enum m210_err err = M210_ERR_OK;
+	uint16_t packet_count = 5000;
+	
+	for (int i = 0; i < packet_count; ++i) {
+		m210_dev_pendata_packet packet;
 
-enum m210_err m210_dev_set_mode(struct m210_dev *const dev_ptr, uint8_t mode)
+		err = m210_dev_read_pendata_packet(dev_ptr, &packet);
+		if (err) {
+			switch(err){
+				case M210_ERR_DEV_TIMEOUT:
+					if (fprintf(file,"%i: --\n",i) < 0){
+						err = M210_ERR_SYS;
+						goto out;
+					}	
+				break;
+				default:
+					goto out;
+			}
+		}else
+		{
+			if (fprintf(file,"%i: x: %i, y: %i, p: %i, state: %X time: %lu\n", i, packet.x, packet.y, packet.pressure, packet.state, (unsigned long)time(NULL)) < 0) {
+				err = M210_ERR_SYS;
+				goto out;
+			}
+		}
+	}
+
+out:
+	if (file) {
+		fflush(file);
+	}
+
+	return err;
+}
+
+
+enum m210_err m210_dev_set_mode(struct m210_dev *const dev_ptr, uint8_t mode, uint8_t led)
 {
 	enum m210_err err = M210_ERR_OK;
 	uint8_t bytes[] = {0x80, 0xB5, 0, 0};
 	
-	switch(mode){
-	case M210_DEV_MODE_TABLET:
-		bytes[2] = M210_DEV_LED_MOUSE;
-		bytes[3] = M210_DEV_MODE_TABLET;
-		break;
-	case M210_DEV_MODE_XY:
-		bytes[2] = M210_DEV_LED_PEN;
-		bytes[3] = M210_DEV_MODE_XY;
-		break;
-	default:
-		err = M210_ERR_SYS;
-		goto out;
-		break;
-	}
+	bytes[2] = led;
+	bytes[3] = mode;
 
 	err = m210_dev_write(dev_ptr, bytes, sizeof(bytes));
 	if (err) {

@@ -59,8 +59,9 @@ static void print_help(void)
 	       "  or:  %s dump [--output-file=FILE]\n"
 	       "  or:  %s convert [--input-file=FILE] [--output-dir=DIR] [--overwrite]\n"
 	       "  or:  %s delete\n"
-		   "  or:  %s xy\n"
-		   "  or:  %s tablet\n"
+		   "  or:  %s xy [--mouse] [--pen]\n"
+		   "  or:  %s tablet [--mouse] [--pen]\n"
+		   "  or:  %s stream\n"
 	       "\n"
 	       "Download notes from Pegasus Tablet Mobile NoteTaker (M210) and\n"
 	       "convert them to SVG files.\n"
@@ -91,8 +92,8 @@ static void print_help(void)
 	       "Display device information:\n"
 	       "  m210 info\n"
 	       "\n"
-		   "Change to tablet mode:\n"
-	       "  m210 tablet\n"
+		   "Change to tablet mode and set the pen LED:\n"
+	       "  m210 tablet --pen\n"
 	       "\n"
 	       "Report bugs to <%s>\n"
 	       "Homepage: <%s>\n"
@@ -101,6 +102,7 @@ static void print_help(void)
 	       program_invocation_name, program_invocation_name,
 	       program_invocation_name, program_invocation_name,
 		   program_invocation_name, program_invocation_name,
+		   program_invocation_name,
 	       PACKAGE_BUGREPORT, PACKAGE_URL);
 }
 
@@ -454,9 +456,12 @@ out:
 static int xy_cmd(int argc, char **argv)
 {
 	int result = -1;
+	uint8_t led = M210_DEV_LED_PEN;
 	m210_dev dev;
 	enum m210_err err;
 	const struct option opts[] = {
+		{"mouse", no_argument, NULL, 'm'},
+		{"pen", no_argument, NULL, 'p'},
 		{0, 0, 0, 0}
 	};
 
@@ -468,6 +473,12 @@ static int xy_cmd(int argc, char **argv)
 		}
 
 		switch (option) {
+		case 'm':
+			led = M210_DEV_LED_MOUSE;
+			break;
+		case 'p':
+			led = M210_DEV_LED_PEN;
+			break;
 		default:
 			print_help_hint();
 			goto out;
@@ -475,7 +486,7 @@ static int xy_cmd(int argc, char **argv)
 	}
 
 	if (optind != argc) {
-		fprintf(stderr, "error: unexpected mouse arguments\n");
+		fprintf(stderr, "error: unexpected XY mode arguments\n");
 		print_help_hint();
 		goto out;
 	}
@@ -486,9 +497,10 @@ static int xy_cmd(int argc, char **argv)
 		goto out;
 	}
 
-	err = m210_dev_set_mode(dev, M210_DEV_MODE_XY);
+	err = m210_dev_set_mode(dev, M210_DEV_MODE_XY, led);
+		
 	if (err) {
-		m210_err_perror(err, "failed to set mouse mode");
+		m210_err_perror(err, "failed to set XY mode");
 		goto out;
 	}
 
@@ -507,11 +519,79 @@ out:
 static int tablet_cmd(int argc, char **argv)
 {
 	int result = -1;
+	uint8_t led = M210_DEV_LED_MOUSE;
 	m210_dev dev;
 	enum m210_err err;
 	const struct option opts[] = {
+		{"mouse", no_argument, NULL, 'm'},
+		{"pen", no_argument, NULL, 'p'},
 		{0, 0, 0, 0}
 	};
+
+	while (1) {
+		int option = getopt_long(argc, argv, "+", opts, NULL);
+
+		if (option == -1) {
+			break;
+		}
+
+		switch (option) {
+		case 'm':
+			led = M210_DEV_LED_MOUSE;
+			break;
+		case 'p':
+			led = M210_DEV_LED_PEN;
+			break;
+		default:
+			print_help_hint();
+			goto out;
+		}
+	}
+
+
+	if (optind != argc) {
+		fprintf(stderr, "error: unexpected tablet mode arguments\n");
+		print_help_hint();
+		goto out;
+	}
+
+	err = m210_dev_connect(&dev);
+	if (err) {
+		m210_err_perror(err, "failed to open device");
+		goto out;
+	}
+
+	err = m210_dev_set_mode(dev, M210_DEV_MODE_TABLET, led);
+
+	if (err) {
+		m210_err_perror(err, "failed to set tablet mode");
+		goto out;
+	}
+
+	result = 0;
+out:
+	if (dev) {
+		err = m210_dev_disconnect(&dev);
+		if (err) {
+			m210_err_perror(err, "error: failed to disconnect");
+			result = -1;
+		}
+	}
+	return result;
+}
+
+static int stream_cmd(int argc, char **argv)
+{
+	int result = -1;
+	uint8_t led = M210_DEV_LED_PEN;
+	m210_dev dev;
+	enum m210_err err;
+	FILE *output_file = NULL;
+	const struct option opts[] = {
+		{0, 0, 0, 0}
+	};
+	
+	output_file = stdout;
 
 	while (1) {
 		int option = getopt_long(argc, argv, "+", opts, NULL);
@@ -527,8 +607,9 @@ static int tablet_cmd(int argc, char **argv)
 		}
 	}
 
+
 	if (optind != argc) {
-		fprintf(stderr, "error: unexpected tablet arguments\n");
+		fprintf(stderr, "error: unexpected stream arguments\n");
 		print_help_hint();
 		goto out;
 	}
@@ -539,12 +620,20 @@ static int tablet_cmd(int argc, char **argv)
 		goto out;
 	}
 
-	err = m210_dev_set_mode(dev, M210_DEV_MODE_TABLET);
+	err = m210_dev_set_mode(dev, M210_DEV_MODE_TABLET, led);
+
 	if (err) {
 		m210_err_perror(err, "failed to set tablet mode");
 		goto out;
 	}
+	
+	err = m210_dev_stream_notes(dev, output_file);
 
+	if (err) {
+		m210_err_perror(err, "failed to stream note");
+		goto out;
+	}
+	
 	result = 0;
 out:
 	if (dev) {
@@ -614,6 +703,8 @@ int main(int argc, char **argv)
 		cmdfn = &xy_cmd;
 	} else if (strcmp(cmd, "tablet") == 0) {
 		cmdfn = &tablet_cmd;
+	} else if (strcmp(cmd, "stream") == 0) {
+		cmdfn = &stream_cmd;
 	} else {
 		fprintf(stderr, "error: unknown command '%s'\n", cmd);
 		print_help_hint();

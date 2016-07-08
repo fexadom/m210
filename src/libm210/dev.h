@@ -46,6 +46,7 @@ enum m210_err m210_dev_disconnect(m210_dev *devp);
 enum m210_err m210_dev_get_info(m210_dev dev, struct m210_dev_info *infop);
 enum m210_err m210_dev_download_notes(m210_dev dev, FILE *file);
 enum m210_err m210_dev_delete_notes(m210_dev dev);
-enum m210_err m210_dev_set_mode(m210_dev dev, uint8_t mode);
+enum m210_err m210_dev_set_mode(m210_dev dev, uint8_t mode, uint8_t led);
+enum m210_err m210_dev_stream_notes(m210_dev dev, FILE *file);
 
 #endif /* DEV_H */
