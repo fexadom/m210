@@ -43,6 +43,7 @@ void sig_handler(int sig)
 	{
 		case SIGINT:
 		case SIGUSR1:
+		case SIGTERM:
 			signal_stop = 1;
 			fprintf(stderr, "Stop signal received, wrapping things up...\n");
 			break;
@@ -80,6 +81,7 @@ static void print_help(void)
 		   "  or:  %s xy [--mouse] [--pen]\n"
 		   "  or:  %s tablet [--mouse] [--pen]\n"
 		   "  or:  %s stream [--output-file=FILE]\n"
+		   "  or:  %s stream_daemon [--output-file=FILE]\n"
 	       "\n"
 	       "Download notes from Pegasus Tablet Mobile NoteTaker (M210) and\n"
 	       "convert them to SVG files.\n"
@@ -120,7 +122,7 @@ static void print_help(void)
 	       program_invocation_name, program_invocation_name,
 	       program_invocation_name, program_invocation_name,
 		   program_invocation_name, program_invocation_name,
-		   program_invocation_name,
+		   program_invocation_name, program_invocation_name,
 	       PACKAGE_BUGREPORT, PACKAGE_URL);
 }
 
@@ -713,14 +715,43 @@ static int createPidFile(const char *pidfile)
 	return pid;
 }
 
-/* remove_pid
- *
- * Remove the the specified file. The result from unlink(2)
- * is returned
- */
-int remove_pid (char *pidfile)
+static int stream_daemon_cmd(int argc, char **argv)
 {
-  return unlink (pidfile);
+	pid_t process_id = 0;
+	pid_t sid = 0;
+	
+	// Create child process
+	process_id = fork();
+	
+	// Indication of fork() failure
+	if (process_id < 0)
+	{
+		fprintf(stderr,"fork failed!\n");
+		return -1;
+	}
+	
+	// PARENT PROCESS. Need to kill it.
+	if (process_id > 0)
+	{
+		fprintf(stderr,"Daemon started with process id: %d \n", process_id);
+		exit(0);
+	}
+	
+	//set new session
+	sid = setsid();
+	
+	if(sid < 0)
+	{
+		fprintf(stderr,"failure in setsid()");
+		return -1;
+	}
+	
+	if(createPidFile(pidfile) < 0){
+		fprintf(stderr, "error: can't create pid file\n");
+		return -1;
+	}
+	
+	return stream_cmd(argc, argv);
 }
 
 int main(int argc, char **argv)
@@ -736,13 +767,6 @@ int main(int argc, char **argv)
 		{0, 0, 0, 0}
 	};
 	
-	
-	
-	if(createPidFile(pidfile) < 0){
-		fprintf(stderr, "error: can't create pid file\n");
-		goto out;
-	}
-	
 	if (signal(SIGINT, sig_handler) == SIG_ERR)
 	{
         fprintf(stderr,"Can't catch SIGINT\n");
@@ -753,7 +777,12 @@ int main(int argc, char **argv)
 	{
         fprintf(stderr,"Can't catch SIGUSR1\n");
 		goto out;
-		
+	}
+	
+	if (signal(SIGTERM, sig_handler) == SIG_ERR)
+	{
+        fprintf(stderr,"Can't catch SIGTERM\n");
+		goto out;
 	}
 	
 
@@ -803,6 +832,8 @@ int main(int argc, char **argv)
 		cmdfn = &tablet_cmd;
 	} else if (strcmp(cmd, "stream") == 0) {
 		cmdfn = &stream_cmd;
+	} else if (strcmp(cmd, "stream_daemon") == 0) {
+		cmdfn = &stream_daemon_cmd;
 	} else {
 		fprintf(stderr, "error: unknown command '%s'\n", cmd);
 		print_help_hint();

@@ -685,7 +685,6 @@ enum m210_err m210_dev_stream_notes(struct m210_dev *const dev_ptr, FILE *file)
 		if (err) {
 			switch(err){
 				case M210_ERR_DEV_TIMEOUT:
-					fprintf(stderr, ".");
 				break;
 				default:
 					if(signal_stop)
@@ -703,7 +702,6 @@ enum m210_err m210_dev_stream_notes(struct m210_dev *const dev_ptr, FILE *file)
 				penUP = 1;
 				
 			if (fprintf(file,"%i, %i, %i, %lu, %lu\n", packet.x, packet.y, penUP, s, ms) < 0) {
-				fprintf(stderr,"!!");
 				err = M210_ERR_SYS;
 				goto out;
 			}

@@ -7,7 +7,7 @@ set -e
 NAME=m210
 PIDFILE=/var/run/$NAME.pid
 #This is the command to be run, give the full pathname
-DAEMON="/usr/local/bin/m210 stream"
+DAEMON="/usr/local/bin/m210 stream_daemon"
 DAEMON_OPTS="--output-file=/opt/recording/notas.txt"
 
 export PATH="${PATH:+$PATH:}/usr/sbin:/sbin"
@@ -15,7 +15,7 @@ export PATH="${PATH:+$PATH:}/usr/sbin:/sbin"
 case "$1" in
   start)
         echo -n "Starting daemon: "$NAME
-	start-stop-daemon -b --start --quiet --pidfile $PIDFILE --exec $DAEMON -- $DAEMON_OPTS
+	start-stop-daemon --start --quiet --pidfile $PIDFILE --exec $DAEMON -- $DAEMON_OPTS
         echo "."
 	;;
   stop)
@@ -26,7 +26,7 @@ case "$1" in
   restart)
         echo -n "Restarting daemon: "$NAME
 	start-stop-daemon -s USR1 --stop --quiet --oknodo --retry 30 --pidfile $PIDFILE
-	start-stop-daemon -b --start --quiet --pidfile $PIDFILE --exec $DAEMON -- $DAEMON_OPTS
+	start-stop-daemon --start --quiet --pidfile $PIDFILE --exec $DAEMON -- $DAEMON_OPTS
 	echo "."
 	;;
 
