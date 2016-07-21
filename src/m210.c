@@ -24,6 +24,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <signal.h>
+#include <sys/file.h>
 
 #include "libm210/dev.h"
 #include "libm210/note.h"
@@ -32,6 +34,22 @@ extern char *program_invocation_name;
 
 static const int svg_stroke_width = 20;
 static const char *const svg_stroke_color = "black";
+static const char *const pidfile = "/var/run/m210.pid";
+
+
+void sig_handler(int sig)
+{
+	switch(sig)
+	{
+		case SIGINT:
+		case SIGUSR1:
+			signal_stop = 1;
+			fprintf(stderr, "Stop signal received, wrapping things up...\n");
+			break;
+		default:
+			fprintf(stderr, "Unknown signal received, doing nothing...\n");
+	}
+}
 
 static void print_help_hint(void)
 {
@@ -61,7 +79,7 @@ static void print_help(void)
 	       "  or:  %s delete\n"
 		   "  or:  %s xy [--mouse] [--pen]\n"
 		   "  or:  %s tablet [--mouse] [--pen]\n"
-		   "  or:  %s stream\n"
+		   "  or:  %s stream [--output-file=FILE]\n"
 	       "\n"
 	       "Download notes from Pegasus Tablet Mobile NoteTaker (M210) and\n"
 	       "convert them to SVG files.\n"
@@ -588,6 +606,7 @@ static int stream_cmd(int argc, char **argv)
 	enum m210_err err;
 	FILE *output_file = NULL;
 	const struct option opts[] = {
+		{"output-file", required_argument, NULL, 'o'},
 		{0, 0, 0, 0}
 	};
 	
@@ -601,6 +620,13 @@ static int stream_cmd(int argc, char **argv)
 		}
 
 		switch (option) {
+			case 'o':
+			output_file = fopen(optarg, "wb");
+			if (output_file == NULL) {
+				perror("error: failed to open output file");
+				goto out;
+			}
+			break;
 		default:
 			print_help_hint();
 			goto out;
@@ -646,6 +672,57 @@ out:
 	return result;
 }
 
+static int createPidFile(const char *pidfile)
+{
+	FILE *f;
+	int fd;
+	int pid;
+
+	if ( ((fd = open(pidfile, O_RDWR|O_CREAT, 0644)) == -1)
+	   || ((f = fdopen(fd, "r+")) == NULL) ) {
+	  fprintf(stderr, "Can't open or create %s.\n", pidfile);
+	  return -1;
+	}
+
+	if (flock(fd, LOCK_EX|LOCK_NB) == -1) {
+	  int n = fscanf(f, "%d", &pid);
+	  fclose(f);
+	  if(n)
+		fprintf(stderr, "Can't lock, lock is held by pid %d.\n", pid);
+		else
+		fprintf(stderr, "Can't lock, file corrupted.\n");
+	  return -1;
+	}
+
+	pid = getpid();
+	if (!fprintf(f,"%d\n", pid)) {
+	  fprintf(stderr, "Can't write into %s.\n", pidfile);
+	  close(fd);
+	  return -1;
+	}
+	fflush(f);
+
+	if (flock(fd, LOCK_UN) == -1) {
+	  fprintf(stderr, "Can't unlock %s.\n", pidfile);
+	  close(fd);
+	  return -1;
+	}
+
+	close(fd);
+
+	return pid;
+}
+
+/* remove_pid
+ *
+ * Remove the the specified file. The result from unlink(2)
+ * is returned
+ */
+int remove_pid (char *pidfile)
+{
+  return unlink (pidfile);
+}
+
 int main(int argc, char **argv)
 {
 	int cmd_argc;
@@ -658,6 +735,27 @@ int main(int argc, char **argv)
 		{"version", no_argument, NULL, 'v'},
 		{0, 0, 0, 0}
 	};
+	
+	
+	
+	if(createPidFile(pidfile) < 0){
+		fprintf(stderr, "error: can't create pid file\n");
+		goto out;
+	}
+	
+	if (signal(SIGINT, sig_handler) == SIG_ERR)
+	{
+        fprintf(stderr,"Can't catch SIGINT\n");
+		goto out;
+	}
+	
+    if (signal(SIGUSR1, sig_handler) == SIG_ERR)
+	{
+        fprintf(stderr,"Can't catch SIGUSR1\n");
+		goto out;
+		
+	}
+	
 
 	while (1) {
 		int option = getopt_long(argc, argv, "+", opts, NULL);
@@ -718,5 +816,6 @@ int main(int argc, char **argv)
 
 	exitval = EXIT_SUCCESS;
 out:
+	unlink(pidfile);
 	return exitval;
 }

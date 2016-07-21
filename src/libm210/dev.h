@@ -32,6 +32,7 @@
 #define M210_DEV_MAX_MEMORY 4063232 /* Bytes. */
 
 typedef struct m210_dev *m210_dev;
+volatile uint8_t signal_stop;
 
 struct m210_dev_info {
 	uint16_t firmware_version;

@@ -21,6 +21,8 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <time.h>
+#include <pthread.h>
+#include <math.h>
 
 #include <linux/hidraw.h>
 #include <linux/input.h>  /* BUS_USB */
@@ -38,6 +40,8 @@
 #define M210_DEV_USB_INTERFACE_COUNT 2
 
 #define M210_DEV_MAX_TIMEOUT_RETRIES 5
+
+volatile uint8_t mode_button_ready = 0;
 
 struct m210_dev {
 	int fds[M210_DEV_USB_INTERFACE_COUNT];
@@ -625,40 +629,103 @@ out:
 	return err;
 }
 
+void *wait_mode_button(void *dev_ptr)
+{
+    enum m210_err err = M210_ERR_OK;
+	uint8_t response[] = {0, 0};
+	
+	while(!signal_stop)
+	{
+		err = m210_dev_read((struct m210_dev *const) dev_ptr, 0, response, sizeof(response));
+		
+		if(err && err != M210_ERR_DEV_TIMEOUT)
+			break;
+		
+		if (response[0] == 0x80 && response[1] == 0xB5)
+		{
+			mode_button_ready = 1;
+			response[0] = 0;
+			response[1] = 0;
+		}
+	}
+	
+	if (err) {
+		perror("error: exit reading mode button loop");
+	}
+	
+	pthread_exit(NULL);
+}
+
 enum m210_err m210_dev_stream_notes(struct m210_dev *const dev_ptr, FILE *file)
 {
 	enum m210_err err = M210_ERR_OK;
-	uint16_t packet_count = 5000;
+	signal_stop = 0;
+	struct timespec spec;
+	long            ms; // Milliseconds
+    time_t          start,s;  // Seconds
+	int rc;
 	
-	for (int i = 0; i < packet_count; ++i) {
+	pthread_t thread;
+	rc = pthread_create(&thread, NULL, wait_mode_button, (void *)dev_ptr);
+	
+	if (rc){
+          fprintf(stderr,"ERROR; return code from pthread_create() is %d\n", rc);
+          err = M210_ERR_SYS;
+		  goto out;
+	}
+	
+	clock_gettime(CLOCK_REALTIME, &spec);
+	start  = spec.tv_sec;
+	fprintf(file,"start: %lu\n",start);
+	while(!signal_stop) {
 		m210_dev_pendata_packet packet;
+		uint8_t penUP = 0;
 
 		err = m210_dev_read_pendata_packet(dev_ptr, &packet);
 		if (err) {
 			switch(err){
 				case M210_ERR_DEV_TIMEOUT:
-					if (fprintf(file,"%i: --\n",i) < 0){
-						err = M210_ERR_SYS;
-						goto out;
-					}	
+					fprintf(stderr, ".");
 				break;
 				default:
+					if(signal_stop)
+						err = M210_ERR_OK;
 					goto out;
+					break;
 			}
 		}else
 		{
-			if (fprintf(file,"%i: x: %i, y: %i, p: %i, state: %X time: %lu\n", i, packet.x, packet.y, packet.pressure, packet.state, (unsigned long)time(NULL)) < 0) {
+			clock_gettime(CLOCK_REALTIME, &spec);
+			s  = spec.tv_sec - start;
+			ms = round(spec.tv_nsec / 1.0e6); // Convert nanoseconds to milliseconds
+			
+			if(packet.pressure)
+				penUP = 1;
+				
+			if (fprintf(file,"%i, %i, %i, %lu, %lu\n", packet.x, packet.y, penUP, s, ms) < 0) {
+				fprintf(stderr,"!!");
 				err = M210_ERR_SYS;
 				goto out;
 			}
+		}
+		
+		if(mode_button_ready)
+		{
+			mode_button_ready = 0;
+			fprintf(file, "----------------------------------------\n");
 		}
 	}
 
 out:
 	if (file) {
-		fflush(file);
+		clock_gettime(CLOCK_REALTIME, &spec);
+		s  = spec.tv_sec;
+		fprintf(file,"stop: %lu\n",s);
+		fclose(file);
 	}
-
+	
+	signal_stop = 1;
+	pthread_join(rc,NULL);
 	return err;
 }
 
