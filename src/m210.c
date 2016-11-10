@@ -34,7 +34,7 @@ extern char *program_invocation_name;
 
 static const int svg_stroke_width = 20;
 static const char *const svg_stroke_color = "black";
-static const char *const pidfile = "/var/run/m210.pid";
+static const char *const pidfile = "/opt/recording/m210.pid";
 
 
 void sig_handler(int sig)
